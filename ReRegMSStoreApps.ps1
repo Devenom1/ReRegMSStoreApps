@@ -32,6 +32,30 @@ Function Check-RunAsAdministrator()
 Check-RunAsAdministrator
 
 
+class WinAppy {
+    [String]$ReadableName
+    [String]$Name
+    [String]$Version
+    [String]$Architecture
+    [String]$InstallLocation
+    [String]$Publisher
+    [String]$PublisherId
+    [String]$PackageFamilyName
+    [String]$PackageFullName
+    [bool]$IsFramework
+    [String]$PackageUserInformation
+    [bool]$IsResourcePackage
+    [bool]$IsBundle
+    [bool]$IsDevelopmentMode
+    [bool]$NonRemovable
+    [String]$Dependencies
+    [bool]$IsPartiallyStaged
+    [String]$SignatureKind
+    [String]$Status
+}
+[System.Collections.ArrayList]$allWinApps = @()
+
+
 # Load required assemblies
 [void] [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
 [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -41,6 +65,39 @@ Check-RunAsAdministrator
 Add-Type -AssemblyName System.Windows.Forms
 $LastColumnClicked = 0 # tracks the last column number that was clicked
 $LastColumnAscending = $false # tracks the direction of the last sort of this column
+
+
+<#
+C# code to expose SHLoadIndirectString(), derived from:
+  Title:    Expand-IndirectString.ps1
+  Author:   Jason Fossen, Enclave Consulting LLC (www.sans.org/sec505)
+  Date:     20 September 2016
+  URL:      https://github.com/SamuelArnold/StarKill3r/blob/master/Star%20Killer/Star%20Killer/bin/Debug/Scripts/SANS-SEC505-master/scripts/Day1-PowerShell/Expand-IndirectString.ps1
+  License: "Public domain, no rights reserved, no warranties or guarantees."
+#>
+
+$CSharpSHLoadIndirectString = @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+
+public class IndirectStrings
+{
+  [DllImport("shlwapi.dll", BestFitMapping = false, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = false, ThrowOnUnmappableChar = true)]
+  internal static extern int SHLoadIndirectString(string pszSource, StringBuilder pszOutBuf, uint cchOutBuf, IntPtr ppvReserved);
+
+  public static string GetIndirectString(string indirectString)
+  {
+    StringBuilder lptStr = new StringBuilder(1024);
+    int returnValue = SHLoadIndirectString(indirectString, lptStr, (uint)lptStr.Capacity, IntPtr.Zero);
+
+    return returnValue == 0 ? lptStr.ToString() : null;
+  }
+}
+'@
+
+# Add the IndirectStrings type to PowerShell
+Add-Type -TypeDefinition $CSharpSHLoadIndirectString -Language CSharp
 
 # Start Creating Functions
 Function GetApps{
@@ -53,16 +110,20 @@ Function GetApps{
     # $Processes = Get-Process | Select Id,ProcessName,Handles,NPM,PM,WS,VM,CPU,Path
 
     # Get a list and create an array of all apps on your system
-    $WinApps = Get-AppXPackage -AllUsers | Select Name,Version,Architecture,InstallLocation,Publisher,PublisherId,PackageFamilyName,PackageFullName,IsFramework,PackageUserInformation,IsResourcePackage,IsBundle,IsDevelopmentMode,NonRemovable,Dependencies,IsPartiallyStaged,SignatureKind,Status
+    $WinApps = Get-AppXPackage -AllUsers | Select-Object Name,Version,Architecture,InstallLocation,Publisher,PublisherId,PackageFamilyName,PackageFullName,IsFramework,PackageUserInformation,IsResourcePackage,IsBundle,IsDevelopmentMode,NonRemovable,Dependencies,IsPartiallyStaged,SignatureKind,Status
     
     # Compile a list of the properties stored for the first indexed app "0"
     $WinAppProperties = $WinApps[0].psObject.Properties
 
     # Create a column in the listView for each property
-    $listview_Apps.Columns.Add("Index") | Out-Null
+    #####     $listview_Apps.Columns.Add("Index") | Out-Null
     $WinAppProperties | ForEach-Object {
-        $listview_Apps.Columns.Add("$($_.Name)") | Out-Null
+        #####     $listview_Apps.Columns.Add("$($_.Name)") | Out-Null
     }
+
+
+    # Access the AppX repository in the Registry
+    Push-Location "Registry::HKEY_CLASSES_ROOT\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages"
 
     $i = 1
     # Looping through each object in the array, and add a row for each
@@ -72,18 +133,111 @@ Function GetApps{
         $WinAppListViewItem = New-Object System.Windows.Forms.ListViewItem($i)
         $i = $i + 1
 
+
+        $winApp2 = New-Object WinAppy
+
+        If (Test-Path $WinApp.PackageFullName) {
+            try {
+                $DisplayNameRaw = (Get-ItemProperty -Path $WinApp.PackageFullName -Name DisplayName).DisplayName
+                if ($DisplayNameRaw -match '^@') {
+                    $DisplayNameResolved = [IndirectStrings]::GetIndirectString( $DisplayNameRaw )
+                    if ($DisplayNameResolved -eq '') {
+                        $winApp2.ReadableName = "$($WinApp.Name) [Failed to resolve name]"
+                        Write-Warning "Could not resolve the display name for $($WinApp.Name)."
+                    } else {
+                        $winApp2.ReadableName = $DisplayNameResolved
+                    }
+                } else {
+                    $DisplayNameResolved = $DisplayNameRaw
+                    Write-Host $DisplayNameResolved
+                    $winApp2.ReadableName = $DisplayNameResolved
+                    if ($DisplayNameRaw -match '^ms-resource\:') {
+                        $winApp2.ReadableName = $DisplayNameResolved.replace("ms-resource:", "")
+                        Write-Verbose "For the want of an `@, a kingdom is lost. $($WinApp.Name) has a bad display name."
+                    }
+                    
+                }
+            } catch {
+                Write-Verbose "There are no display names associated with $($WinApp.Name)."
+            }
+        }
+
+        
         # For each properties, except for 'Id' that we've already used to create the ListViewItem,
         # find the column name, and extract the data for that property on the current object/process 
         #$WinApp.psObject.Properties | Where {$_.Name -ne "RunspaceId"} | ForEach-Object {
         $WinApp.psObject.Properties | ForEach-Object {
             $ColumnName = $_.Name
             Write-Output $ColumnName
-            $WinAppListViewItem.SubItems.Add("$($WinApp.$ColumnName)") | Out-Null
+            ######     $WinAppListViewItem.SubItems.Add("$($WinApp.$ColumnName)") | Out-Null
+            $winApp2.$ColumnName = $WinApp.$ColumnName
         }
+        $allWinApps.Add($winApp2)
 
         # Add the created listViewItem to the ListView control
         # (not adding 'Out-Null' at the end of the line will result in numbers outputed to the console)
-        $listview_Apps.Items.Add($WinAppListViewItem) | Out-Null
+        #####     $listview_Apps.Items.Add($WinAppListViewItem) | Out-Null
+
+    }
+
+    if ($allWinApps.Count -gt 0) {
+        Write-Host "Not Empty"
+        $listview_Apps.Columns.Add("Index") | Out-Null
+        $allWinApps[0].psObject.properties | ForEach-Object {
+            $listview_Apps.Columns.Add("$($_.Name)") | Out-Null
+            #Write-Host $_.Name
+        }
+    }
+
+    $ii = 0
+    ForEach ($WinApp in $allWinApps) {
+        $ii = $ii + 1
+
+        $WinAppListViewItem = New-Object System.Windows.Forms.ListViewItem($i)
+
+        $WinApp.psObject.Properties | ForEach-Object {
+            $ColumnName = $_.Name
+            Write-Output $ColumnName
+            $WinAppListViewItem.SubItems.Add("$($WinApp.$ColumnName)") | Out-Null
+            $winApp2.$ColumnName = $WinApp.$ColumnName
+        }
+        $listview_Apps.Items.Add($WinAppListViewItem) | Out-Null   
+    }
+
+    Pop-Location
+
+    # get actual names using this link
+    # https://github.com/skycommand/AdminScripts/blob/master/AppX/Get%20AppX%20package%20names.ps1
+
+    $WinGetApps = WINGET list
+    # Compile a list of the properties stored for the first indexed app "0"
+    $WinGetAppProperties = $WinGetApps[0].psObject.Properties
+    Write-Host $WinGetAppProperties
+    $WinGetAppProperties | ForEach-Object {
+        Write-Host $_.Name
+    }
+
+
+    ForEach ($WinGetApp in $WinGetApps){
+
+        # Create a listViewItem, and assign it it's first value
+        # $WinAppListViewItem = New-Object System.Windows.Forms.ListViewItem($i)
+        # $i = $i + 1
+
+        # For each properties, except for 'Id' that we've already used to create the ListViewItem,
+        # find the column name, and extract the data for that property on the current object/process 
+        #$WinApp.psObject.Properties | Where {$_.Name -ne "RunspaceId"} | ForEach-Object {
+        $WinGetApp.psObject.Properties | ForEach-Object {
+            $ColumnName = $_.Name
+            # Write-Host $ColumnName
+            # Write-Host $WinGetApp.$ColumnName
+
+            # $WinAppListViewItem.SubItems.Add("$($WinApp.$ColumnName)") | Out-Null
+            # $winApp2 = New-Object WinAppy
+            # $winApp2.$ColumnName = $WinApp.$ColumnName
+            # $allWinApps.Add($winApp2)
+        }
+
 
     }
 
