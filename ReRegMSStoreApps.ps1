@@ -101,6 +101,8 @@ Add-Type -TypeDefinition $CSharpSHLoadIndirectString -Language CSharp
 
 # Start Creating Functions
 Function GetApps{
+    
+    Write-Host "Started at $(get-date -f "MM-dd-yyyy HH:mm:ss")"
 
     # Reset the columns and content of listview_Apps before adding data to it.
     $listview_Apps.Items.Clear()
@@ -185,11 +187,9 @@ Function GetApps{
     }
 
     if ($allWinApps.Count -gt 0) {
-        Write-Host "Not Empty"
         $listview_Apps.Columns.Add("Index") | Out-Null
         $allWinApps[0].psObject.properties | ForEach-Object {
             $listview_Apps.Columns.Add("$($_.Name)") | Out-Null
-            #Write-Host $_.Name
         }
     }
 
@@ -213,40 +213,10 @@ Function GetApps{
     # get actual names using this link
     # https://github.com/skycommand/AdminScripts/blob/master/AppX/Get%20AppX%20package%20names.ps1
 
-    $WinGetApps = WINGET list
-    # Compile a list of the properties stored for the first indexed app "0"
-    $WinGetAppProperties = $WinGetApps[0].psObject.Properties
-    Write-Host $WinGetAppProperties
-    $WinGetAppProperties | ForEach-Object {
-        #Write-Host $_.Name
-    }
-
-
-    ForEach ($WinGetApp in $WinGetApps){
-
-        # Create a listViewItem, and assign it it's first value
-        # $WinAppListViewItem = New-Object System.Windows.Forms.ListViewItem($i)
-        # $i = $i + 1
-
-        # For each properties, except for 'Id' that we've already used to create the ListViewItem,
-        # find the column name, and extract the data for that property on the current object/process 
-        #$WinApp.psObject.Properties | Where {$_.Name -ne "RunspaceId"} | ForEach-Object {
-        $WinGetApp.psObject.Properties | ForEach-Object {
-            $ColumnName = $_.Name
-            # Write-Host $ColumnName
-            # Write-Host $WinGetApp.$ColumnName
-
-            # $WinAppListViewItem.SubItems.Add("$($WinApp.$ColumnName)") | Out-Null
-            # $winApp2 = New-Object WinAppy
-            # $winApp2.$ColumnName = $WinApp.$ColumnName
-            # $allWinApps.Add($winApp2)
-        }
-
-
-    }
-
     # Resize all columns of the listView to fit their contents
     $listview_Apps.AutoResizeColumns("HeaderSize")
+
+    Write-Host "Ended at $(get-date -f "MM-dd-yyyy HH:mm:ss")"
 
 }
 
