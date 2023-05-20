@@ -149,17 +149,21 @@ Function GetApps{
                     }
                 } else {
                     $DisplayNameResolved = $DisplayNameRaw
-                    Write-Host $DisplayNameResolved
+                    #Write-Host $DisplayNameResolved
                     $winApp2.ReadableName = $DisplayNameResolved
                     if ($DisplayNameRaw -match '^ms-resource\:') {
-                        $winApp2.ReadableName = $DisplayNameResolved.replace("ms-resource:", "")
+                        $winApp2.ReadableName = "__" +$DisplayNameResolved.replace("ms-resource:", "") + " [Bad Name]"
                         Write-Verbose "For the want of an `@, a kingdom is lost. $($WinApp.Name) has a bad display name."
                     }
                     
                 }
             } catch {
+                $winApp2.ReadableName = "[Failed to resolve name]"
                 Write-Verbose "There are no display names associated with $($WinApp.Name)."
             }
+        } else {
+            $winApp2.ReadableName = "[Not installed or Previously installed]"
+            Write-Host "Couldn't find path for $($WinApp.PackageFullName)"
         }
 
         
@@ -193,7 +197,7 @@ Function GetApps{
     ForEach ($WinApp in $allWinApps) {
         $ii = $ii + 1
 
-        $WinAppListViewItem = New-Object System.Windows.Forms.ListViewItem($i)
+        $WinAppListViewItem = New-Object System.Windows.Forms.ListViewItem($ii)
 
         $WinApp.psObject.Properties | ForEach-Object {
             $ColumnName = $_.Name
@@ -214,7 +218,7 @@ Function GetApps{
     $WinGetAppProperties = $WinGetApps[0].psObject.Properties
     Write-Host $WinGetAppProperties
     $WinGetAppProperties | ForEach-Object {
-        Write-Host $_.Name
+        #Write-Host $_.Name
     }
 
 
