@@ -32,6 +32,86 @@ Function Check-RunAsAdministrator()
 Check-RunAsAdministrator
 
 
+remove-variable * -ea 0
+$ErrorActionPreference = "stop"
+
+$signature = @'
+[DllImport("advapi32.dll")]
+public static extern Int32 RegOpenKeyEx(
+    UInt32 hkey,
+    StringBuilder lpSubKey,
+    int ulOptions,
+    int samDesired,
+    out IntPtr phkResult
+    );
+
+[DllImport("advapi32.dll")]
+public static extern Int32 RegQueryInfoKey(
+    IntPtr hKey,
+    StringBuilder lpClass, Int32 lpCls, Int32 spare, 
+    out int subkeys, out int skLen, int mcLen, out int values,
+    out int vNLen, out int mvLen, int secDesc,                
+    out System.Runtime.InteropServices.ComTypes.FILETIME lpftLastWriteTime
+);
+
+[DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+public static extern Int32 RegEnumValue(
+  IntPtr hKey,
+  int dwIndex,
+  IntPtr lpValueName,
+  ref IntPtr lpcchValueName,
+  IntPtr lpReserved,
+  out IntPtr lpType,
+  IntPtr lpData,
+  ref int lpcbData
+);
+
+[DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+public static extern Int32 RegEnumKeyEx(
+  IntPtr hKey,
+  int dwIndex,
+  IntPtr lpName,
+  ref int lpcName,
+  IntPtr lpReserved,
+  IntPtr lpClass,
+  int lpcClass,
+  out System.Runtime.InteropServices.ComTypes.FILETIME lpftLastWriteTime
+);
+
+[DllImport("advapi32.dll")]
+public static extern Int32 RegCloseKey(IntPtr hkey);
+'@ 
+$reg = add-type $signature -Name reg -Using System.Text -PassThru
+$marshal = [System.Runtime.InteropServices.Marshal]
+
+Function CheckRegistryPathExist($path) {
+
+    # open the key:
+    [IntPtr]$hkey = 0
+    $result = $reg::RegOpenKeyEx($global:hive, $path, 0, 25,[ref]$hkey)
+    if ($result -eq 0) {
+
+        # get details of the key:
+        $subKeyCount  = 0
+        $maxSubKeyLen = 0
+        $valueCount   = 0
+        $maxNameLen   = 0
+        $maxValueLen  = 0
+        $time = $global:time
+        $result = $reg::RegQueryInfoKey($hkey,$null,0,0,[ref]$subKeyCount,[ref]$maxSubKeyLen,0,[ref]$valueCount,[ref]$maxNameLen,[ref]$maxValueLen,0,[ref]$time)
+        if ($result -eq 0) {
+           $maxSubkeyLen += $maxSubkeyLen+1
+           $maxNameLen   += $maxNameLen  +1
+           $maxValueLen  += $maxValueLen +1
+           return $true
+        } else {
+            return $false
+        }
+    }
+    return $false
+}
+
+
 class WinAppy {
     [String]$ReadableName
     [String]$Name
@@ -124,8 +204,15 @@ Function GetApps{
     }
 
 
+    $RegPathBase = "Registry::HKEY_CLASSES_ROOT\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages"
     # Access the AppX repository in the Registry
-    Push-Location "Registry::HKEY_CLASSES_ROOT\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages"
+    Push-Location $RegPathBase
+
+    $RegPathBase2 = "Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages"
+    $global:hive = [uint32]"0x80000000" #HKCR ref from https://devblogs.microsoft.com/scripting/registry-cmdlets-working-with-the-registry/
+    $global:time = New-Object System.Runtime.InteropServices.ComTypes.FILETIME
+
+    $total_millis = 0
 
     $i = 1
     # Looping through each object in the array, and add a row for each
@@ -135,10 +222,16 @@ Function GetApps{
         $WinAppListViewItem = New-Object System.Windows.Forms.ListViewItem($i)
         $i = $i + 1
 
-
         $winApp2 = New-Object WinAppy
+        
+        $pathFound = $false
+        $beforePackNameTS = [Math]::Round((Get-Date).ToFileTime() / 10000 - 11644473600000)
 
-        If (Test-Path $WinApp.PackageFullName) {
+        $FullRegPath = $RegPathBase2 + "\" +  $WinApp.PackageFullName
+        $pathExists = CheckRegistryPathExist($FullRegPath)
+        If ($pathExists -eq $true) {
+        #If (Test-Path $WinApp.PackageFullName) { # This takes very long if the path doesn't exist
+            $pathFound = $true
             try {
                 $DisplayNameRaw = (Get-ItemProperty -Path $WinApp.PackageFullName -Name DisplayName).DisplayName
                 if ($DisplayNameRaw -match '^@') {
@@ -167,7 +260,9 @@ Function GetApps{
             $winApp2.ReadableName = "[Not installed or Previously installed]"
             Write-Host "Couldn't find path for $($WinApp.PackageFullName)"
         }
-
+        $afterPackNameTS = [Math]::Round((Get-Date).ToFileTime() / 10000 - 11644473600000)
+        $total_millis += $afterPackNameTS - $beforePackNameTS
+        # Write-Host "Getting package name for " +  $WinApp.PackageFullName + " took " + ($afterPackNameTS - $beforePackNameTS) + " milliseconds"
         
         # For each properties, except for 'Id' that we've already used to create the ListViewItem,
         # find the column name, and extract the data for that property on the current object/process 
@@ -183,8 +278,9 @@ Function GetApps{
         # Add the created listViewItem to the ListView control
         # (not adding 'Out-Null' at the end of the line will result in numbers outputed to the console)
         #####     $listview_Apps.Items.Add($WinAppListViewItem) | Out-Null
-
     }
+
+    Write-Host "Total milliseconds taken for all packages $($total_millis)"
 
     if ($allWinApps.Count -gt 0) {
         $listview_Apps.Columns.Add("Index") | Out-Null
