@@ -245,7 +245,7 @@ Function GetApps{
                     #Write-Host $DisplayNameResolved
                     $winApp2.ReadableName = $DisplayNameResolved
                     if ($DisplayNameRaw -match '^ms-resource\:') {
-                        $winApp2.ReadableName = "__" +$DisplayNameResolved.replace("ms-resource:", "") + " [Bad Name]"
+                        $winApp2.ReadableName = "$($WinApp.Name.replace('.', ' ')) __" +$DisplayNameResolved.replace("ms-resource:", "") + " [Bad Name]"
                         Write-Verbose "For the want of an `@, a kingdom is lost. $($WinApp.Name) has a bad display name."
                     }
                     
@@ -255,7 +255,7 @@ Function GetApps{
                 Write-Verbose "There are no display names associated with $($WinApp.Name)."
             }
         } else {
-            $winApp2.ReadableName = "[Not installed or Previously installed]"
+            $winApp2.ReadableName = "$($WinApp.Name.replace('.', ' ')) [Not installed or Previously installed]"
             Write-Host "Couldn't find path for $($WinApp.PackageFullName)"
         }
         $afterPackNameTS = [Math]::Round((Get-Date).ToFileTime() / 10000 - 11644473600000)
@@ -386,18 +386,14 @@ function SearchListView($searchTerm) {
     
     # Add items matching the search text
     foreach ($item in $backupItems) {
-        Write-Host "Reached here 1"
         if ($item.SubItems[1].Text.ToLower().Contains($searchText)) {
             $listview_Apps.Items.Add($item)
         }
         continue
         # The below code searches all columns and takes time
         foreach ($subItem in $item.SubItems) {
-            Write-Host "Reached here 2"
             if ($subItem.Text.ToLower().Contains($searchText)) {
-                Write-Host "Reached here 3"
                 $listview_Apps.Items.Add($item)
-                Write-Host "Reached here 4"
                 break
             }
         }
