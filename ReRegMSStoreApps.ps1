@@ -369,37 +369,39 @@ $BackupListItems = @()
 ## Event handler
 function SearchListView($searchTerm) {
     
-    $BackupListItems.Clear()
-    Write-Host "Reached here 1"
-    
-    [System.Collections.ArrayList]$ListItems = @() # three-dimensional array; column 1 indexes the other columns, column 2 is the value to be sorted on, and column 3 is the System.Windows.Forms.ListViewItem object
-    Write-Host "Reached here 2"
- 
-    foreach($ListItem in $listview_Apps.Items) {
-        Write-Host "Reached here 3 $($searchTerm)"
-        Write-Host "Has term $($ListItem.SubItems[1].Text.contains($searchTerm))"
-        if ($ListItem.SubItems[1].Text.contains($searchTerm)) {
-            Write-Host "Reached here 4"
-            $ListItems += $ListItem
-            Write-Host "Reached here 5"
-        }
-        $BackupListItems += $ListItem
-        Write-Host "Reached here 6"
-    }
- 
+    $searchText = $searchTerm.ToLower()
 
-    Write-Host "Start Update"
-    ## the list is sorted; display it in the listview
-    $listview_Apps.BeginUpdate()
-    $listview_Apps.Items.Clear()
-    foreach($ListItem in $ListItems) {
-        # $listview_Apps.Items.Add($ListItem[1])
-        Write-Host "Reached here 7"
-        $listview_Apps.Items.Add($ListItem)
-        Write-Host "Reached here 8"
+    if ($backupItems.Count -eq 0) {
+        $backupItems.AddRange($listview_Apps.Items)
     }
-    $listview_Apps.EndUpdate()
-    Write-Host "End Update"
+
+    # Clear the ListView items
+    $listview_Apps.Items.Clear()
+
+    if ($searchText -eq "") {
+        # Add all items back if search is cleared
+        $listview_Apps.Items.AddRange($backupItems)
+        return
+    }
+    
+    # Add items matching the search text
+    foreach ($item in $backupItems) {
+        Write-Host "Reached here 1"
+        if ($item.SubItems[1].Text.ToLower().Contains($searchText)) {
+            $listview_Apps.Items.Add($item)
+        }
+        continue
+        # The below code searches all columns and takes time
+        foreach ($subItem in $item.SubItems) {
+            Write-Host "Reached here 2"
+            if ($subItem.Text.ToLower().Contains($searchText)) {
+                Write-Host "Reached here 3"
+                $listview_Apps.Items.Add($item)
+                Write-Host "Reached here 4"
+                break
+            }
+        }
+    }
 }
 
 Function ReRegisterApp{
@@ -514,52 +516,7 @@ $field_Search = New-Object System.Windows.Forms.TextBox
     $field_Search.Enabled = $true
         $Form_HelloWorld.Controls.Add($field_Search)
     $handler_txtb_KeyDown={
-        Write-Host "Reached here 0"
-        $searchText = $field_Search.Text.ToLower()
-    
-        if ($backupItems.Count -eq 0) {
-            $backupItems.AddRange($listview_Apps.Items)
-        }
-        
-
-        # Clear the ListView items
-        $listview_Apps.Items.Clear()
-
-        if ($searchText -eq "") {
-            Write-Host "Reached here 0.1"
-            $listview_Apps.Items.AddRange($backupItems)
-            Write-Host "Reached here 0.2"
-            Write-Host "ListCount : $($listview_Apps.Items.Count)"
-            Write-Host "backupItems : $($backupItems.Count)"
-            return
-        }
-        
-        # Add items matching the search text
-        foreach ($item in $backupItems) {
-            Write-Host "Reached here 1"
-            if ($item.SubItems[1].Text.ToLower().Contains($searchText)) {
-                Write-Host "Reached here 3"
-                $listview_Apps.Items.Add($item)
-                Write-Host "Reached here 4"
-                #break
-            }
-            continue
-            # The below code searches all columns and takes time
-            foreach ($subItem in $item.SubItems) {
-                Write-Host "Reached here 2"
-                if ($subItem.Text.ToLower().Contains($searchText)) {
-                    Write-Host "Reached here 3"
-                    $listview_Apps.Items.Add($item)
-                    Write-Host "Reached here 4"
-                    break
-                }
-            }
-        }
-        return
-        $data = $listview_Apps.Items -like "*$($field_Search.Text)*"
-        Write-Host "Count $($data.Count)"
-        $listview_Apps.Items = $data
-        #SearchListView($field_Search.Text)
+        SearchListView($field_Search.Text)
     }
     $field_Search.Add_TextChanged($handler_txtb_KeyDown)
 
